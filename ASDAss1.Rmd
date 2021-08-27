@@ -19,17 +19,17 @@ durOnes = c(15, 20, 25, 15, 20, 25)
 negOnes = IV - durOnes
 N = 240
 
-TC1 <- c( rep(c(rep(1, durOnes[1]), rep(-1, negOnes[1])), ceiling(N/IV[1])) )
+TC1 <- c( rep(c(rep(1, durOnes[1]), rep(0, negOnes[1])), ceiling(N/IV[1])) )
 TC1 <- head(TC1, N)
-TC2 <- c( rep(0, 20), rep(c(rep(1,durOnes[2]), rep(-1, negOnes[2])), ceiling(N/IV[2])))
+TC2 <- c( rep(0, 20), rep(c(rep(1,durOnes[2]), rep(0, negOnes[2])), ceiling(N/IV[2])))
 TC2 <- head(TC2, N)
-TC3 <- c( rep(c(rep(1,durOnes[3]), rep(-1, negOnes[3])), ceiling(N/IV[3])))
+TC3 <- c( rep(c(rep(1,durOnes[3]), rep(0, negOnes[3])), ceiling(N/IV[3])))
 TC3 <- head(TC3, N) 
-TC4 <- c( rep(c(rep(1,durOnes[4]), rep(-1, negOnes[4])), ceiling(N/IV[4])))
+TC4 <- c( rep(c(rep(1,durOnes[4]), rep(0, negOnes[4])), ceiling(N/IV[4])))
 TC4 <- head(TC4, N) 
-TC5 <- c( rep(c(rep(1,durOnes[5]), rep(-1, negOnes[5])), ceiling(N/IV[5])))
+TC5 <- c( rep(c(rep(1,durOnes[5]), rep(0, negOnes[5])), ceiling(N/IV[5])))
 TC5 <- head(TC5, N) 
-TC6 <- c( rep(c(rep(1,durOnes[6]), rep(-1, negOnes[6])), ceiling(N/IV[6])))
+TC6 <- c( rep(c(rep(1,durOnes[6]), rep(0, negOnes[6])), ceiling(N/IV[6])))
 TC6 <- head(TC6, N)
 
 standardiseVector <- function(TC) {
@@ -62,25 +62,25 @@ write.csv(TC, "./TC.csv")
 ```
 
 ```{r}
-SM1 <- matrix(0, 21, 21)
+smDim <- 21
+
+SM1 <- matrix(0, smDim, smDim)
 SM1[c(2:6), c(2:6)] <- 1
 
-SM2 <- matrix(0, 21, 21)
+SM2 <- matrix(0, smDim, smDim)
 SM2[c(2:6), c(15:19)] <- 1
 
-SM3 <- matrix(0, 21, 21)
+SM3 <- matrix(0, smDim, smDim)
 SM3[c(8:13), c(2:6)] <- 1
 
-SM4 <- matrix(0, 21, 21)
+SM4 <- matrix(0, smDim, smDim)
 SM4[c(8:13), c(15:19)] <- 1
 
-SM5 <- matrix(0, 21, 21)
+SM5 <- matrix(0, smDim, smDim)
 SM5[c(15:19), c(2:6)] <- 1
 
-SM6 <- matrix(0, 21, 21)
+SM6 <- matrix(0, smDim, smDim)
 SM6[c(15:19), c(15:19)] <- 1
-
-SM1
 ```
 
 ``` {r}
@@ -109,5 +109,50 @@ SM <- matrix(SMv, nrow = 6, ncol = 441, byrow = TRUE)
 write.csv(t(SM), "./SM.csv")
 ```
 
+```{r}
+tmpTCnoise <- rnorm(N * 6, mean = 0, sd = sqrt(0.25))
+tmpSMnoise <- rnorm(6 * smDim^2, mean = 0, sd = sqrt(0.015))
 
+TCnoise <- matrix(tmpTCnoise, nrow = N, ncol = 6)
+SMnoise <- matrix(tmpSMnoise, nrow = 6, ncol = smDim^2)
+```
+
+```{r}
+write.csv(t(SMnoise), "./SMnoise.csv")
+write.csv(TCnoise, "./TCnoise.csv")
+```
+
+```{r}
+
+hist(tmpTCnoise,prob = TRUE)
+lines(density(tmpTCnoise))
+x <- seq(-1.5, 1.5, 0.05)
+f <- dnorm(x, mean = 0, sd = sqrt(0.25))
+lines(x, f, col = "red", lwd = 2)
+```
+```{r}
+hist(tmpSMnoise,prob = TRUE)
+lines(density(tmpSMnoise))
+x <- seq(-0.4, 0.4, 0.005)
+f <- dnorm(x, mean = 0, sd = sqrt(0.015))
+lines(x, f, col = "red", lwd = 2)
+```
+
+```{r}
+X = (TC + TCnoise) %*% (SM +SMnoise)
+
+plot(X[,1],type = 'l',col = 1,ylab = 'value', ylim = c(-4, 4))
+rdm100 <- head(sample(c(1:240)),100)
+for (i in 2:100){
+  lines(X[,rdm100[i]], type = "l", col = i)
+}
+```
+```{r}
+Xvar <- rep(0, 441)
+for (i in 1:441){
+  Xvar[i] <- var(X[,i])
+}
+
+plot(Xvar,type = 'p',ylab = 'variance')
+```
 
