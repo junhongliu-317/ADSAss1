@@ -7,12 +7,14 @@ output: html_document
 ```{r}
 install.packages("corrplot")
 install.packages("ggplot2")
-```
+``` 
 
 ---
 ```{r}
 library(corrplot)
 library(ggplot2)
+set.seed(3017)
+#Set the initalisation vectors and construct TC1-6 using it
 AV = c(0, 20, 0, 0, 0, 0)
 IV = c(30, 45, 60, 40, 40, 40)
 durOnes = c(15, 20, 25, 15, 20, 25)
@@ -32,6 +34,7 @@ TC5 <- head(TC5, N)
 TC6 <- c( rep(c(rep(1,durOnes[6]), rep(0, negOnes[6])), ceiling(N/IV[6])))
 TC6 <- head(TC6, N)
 
+#Standardise the 6 TCs and plot them
 standardiseVector <- function(TC) {
   TCMean <- mean(TC)
   TCSD <- sd(TC)
@@ -58,10 +61,12 @@ plot(TC6)
 ```
 
 ```{r}
+#export to python for heatmap generation
 write.csv(TC, "./TC.csv")
 ```
 
 ```{r}
+#Generate the SM1-6
 smDim <- 21
 
 SM1 <- matrix(0, smDim, smDim)
@@ -84,6 +89,7 @@ SM6[c(15:19), c(15:19)] <- 1
 ```
 
 ``` {r}
+#Export each SM to python
 write.csv(SM1, "./SM1.csv")
 write.csv(SM2, "./SM2.csv")
 write.csv(SM3, "./SM3.csv")
@@ -94,12 +100,12 @@ write.csv(SM6, "./SM6.csv")
 
 ```{r}
 SMv <- c(
-  as.vector(t(SM1)), 
-  as.vector(t(SM2)),
-  as.vector(t(SM3)),
-  as.vector(t(SM4)),
-  as.vector(t(SM5)),
-  as.vector(t(SM6))
+  as.vector(SM1), 
+  as.vector(SM2),
+  as.vector(SM3),
+  as.vector(SM4),
+  as.vector(SM5),
+  as.vector(SM6)
   )
 
 SM <- matrix(SMv, nrow = 6, ncol = 441, byrow = TRUE)
@@ -110,20 +116,23 @@ write.csv(t(SM), "./SM.csv")
 ```
 
 ```{r}
+#Generate the noise matrices
 tmpTCnoise <- rnorm(N * 6, mean = 0, sd = sqrt(0.25))
 tmpSMnoise <- rnorm(6 * smDim^2, mean = 0, sd = sqrt(0.015))
 
 TCnoise <- matrix(tmpTCnoise, nrow = N, ncol = 6)
 SMnoise <- matrix(tmpSMnoise, nrow = 6, ncol = smDim^2)
+noiseProd <- TCnoise %*% SMnoise
 ```
 
 ```{r}
 write.csv(t(SMnoise), "./SMnoise.csv")
 write.csv(TCnoise, "./TCnoise.csv")
+write.csv(noiseProd, "./noiseProd.csv")
 ```
 
 ```{r}
-
+#Graphing the histograms of the different noise sources and comparing them to the associated normal distribution
 hist(tmpTCnoise,prob = TRUE)
 lines(density(tmpTCnoise))
 x <- seq(-1.5, 1.5, 0.05)
@@ -139,20 +148,201 @@ lines(x, f, col = "red", lwd = 2)
 ```
 
 ```{r}
+
+#Create the X matrix and graph 100 random columns of X
 X = (TC + TCnoise) %*% (SM +SMnoise)
 
-plot(X[,1],type = 'l',col = 1,ylab = 'value', ylim = c(-4, 4))
 rdm100 <- head(sample(c(1:240)),100)
+plot(X[,rdm100[1]],type = 'l',col = 1,ylab = 'value', ylim = c(-4, 4))
 for (i in 2:100){
   lines(X[,rdm100[i]], type = "l", col = i)
 }
 ```
 ```{r}
+#Graph the variance of each column of X
 Xvar <- rep(0, 441)
 for (i in 1:441){
   Xvar[i] <- var(X[,i])
 }
 
 plot(Xvar,type = 'p',ylab = 'variance')
+
+for (i in 1:441){
+  X[,i] <- standardiseVector(X[,i])
+}
+```
+```{r}
+Alsr = solve((t(TC) %*% TC)) %*% t(TC) %*% X
+Dlsr = X %*% t(Alsr)
+```
+
+```{r}
+par(mfrow=c(1,2))
+for (i in 1:6){
+  A <- matrix(Alsr[i,], nrow = 21, ncol = 21)
+  corrplot(A, is.corr = FALSE, method = 'color', 
+           title = paste("Retrieved SM ", i),
+           mar=c(0,0,1,0))
+  D <- Dlsr[,i]
+  plot(D, type = 'l', main = paste("Retrieved TC  ", i))
+}
+```
+
+```{r}
+plot(Dlsr[,3], X[,30],
+     main = "D(3) vs X(30)")
+
+plot(Dlsr[,4], X[,30],
+     main = "D(4) vs X(30)")
+```
+```{r}
+V = 441
+lamb = 0.5*V
+
+Arr <- solve((t(TC) %*% TC) + lamb * diag(6)) %*% t(TC) %*% X
+Drr <- X %*% t(Arr)
+
+DlsrTC <- cor(TC, Dlsr)
+DrrTC <- cor(TC, Drr)
+
+c_tlsr <- rep(0, 6)
+c_trr <- rep(0,6)
+
+for (i in 1:6){
+  c_tlsr[i] <- max(abs(DlsrTC[,i]))
+  c_trr[i] <- max(abs(DrrTC[,i]))
+}
+
+sum(c_trr) - sum(c_tlsr) 
+
+lamb1000 = 1000 * V
+
+Arr2 <- solve((t(TC) %*% TC) + lamb1000 * diag(6)) %*% t(TC) %*% X
+plot(Arr2[1,], Alsr[1,])
+```
+
+```{r}
+x1 = 21
+x2 = 21
+nsrcs <- 6
+N <- 240
+V <- 441
+MSEs <- vector(length = 0)
+for (rho in seq(from = 0, to = 1, by = 0.05)){
+  MSE = 0
+  for (i in 1:10){
+    tmpTCnoise <- rnorm(N * 6, mean = 0, sd = sqrt(0.25))
+    tmpSMnoise <- rnorm(6 * smDim^2, mean = 0, sd = sqrt(0.015))
+    
+    TCnoise <- matrix(tmpTCnoise, nrow = N, ncol = 6)
+    SMnoise <- matrix(tmpSMnoise, nrow = 6, ncol = smDim^2)
+    
+    X = (TC + TCnoise) %*% (SM +SMnoise)
+    for (j in 1:441){
+      X[,j] <- standardiseVector(X[,j])
+    }
+    
+    step <- 1 / (norm(TC%*%t(TC)) * 1.1)
+    thr <- rho*N*step
+    Ao <- matrix(0, nsrcs, 1)
+    A <- matrix(0, nsrcs, 1)
+    Alr <- matrix(0, nsrcs, x1*x2)
+    
+    for(k in 1:( x1*x2 ) ){
+      A <- Ao+step *( t(TC)%*%(X[,k] - (TC%*%Ao)))
+      A <- (1/(1+ thr)) * (sign(A)*pmax (replicate(nsrcs, 0) , abs(A) - thr))
+      for (m in 1:10 ){
+        Ao <- A
+        A <- Ao+step*(t(TC)%*%(X[,k]-(TC%*%Ao)))
+        A <- (1/(1+thr)) * (sign(A)*pmax (replicate(nsrcs, 0 ), abs(A)-thr))
+      }
+      Alr[, k]<-A
+    }
+    Dlr <- X%*%t(Alr)
+    LRParam <- sum((X - Dlr%*%Alr)^2)/(N * V)
+    MSE = MSE + LRParam
+  }
+  MSE = MSE/10
+  MSEs <- append(MSEs, MSE)
+}
+plot(x = seq(from = 0, to = 1, by = 0.05), y = MSEs)
+
+cbind(MSEs, rho = seq(from = 0, to = 1, by = 0.05))
+```
+
+```{r}
+rho = 0.6
+
+step <- 1 / (norm(TC%*%t(TC)) * 1.1)
+thr <- rho*N*step
+Ao <- matrix(0, nsrcs, 1)
+A <- matrix(0, nsrcs, 1)
+Alr <- matrix(0, nsrcs, x1*x2)
+
+for(k in 1:( x1*x2 ) ){
+  A <- Ao+step *( t(TC)%*%(X[,k] - (TC%*%Ao)))
+  A <- (1/(1+ thr)) * (sign(A)*pmax (replicate(nsrcs, 0) , abs(A) - thr))
+  for (m in 1:10 ){
+    Ao <- A
+    A <- Ao+step*(t(TC)%*%(X[,k]-(TC%*%Ao)))
+    A <- (1/(1+thr)) * (sign(A)*pmax (replicate(nsrcs, 0 ), abs(A)-thr))
+  }
+  Alr[, k]<-A
+}
+Dlr <- X%*%t(Alr)
+
+
+DrrTC <- cor(TC, Drr)
+DlrTC <- cor(TC, Dlr)
+ArrSM <- cor(t(SM), t(Arr))
+AlrSM <- cor(t(SM), t(Alr))
+
+c_trr <- rep(0, 6)
+c_srr <- rep(0, 6)
+c_tlr <- rep(0, 6)
+c_slr <- rep(0, 6)
+
+for (i in 1:6){
+  c_trr[i] <- max(abs(DrrTC[,i]))
+  c_srr[i] <- max(abs(ArrSM[,i]))
+  c_tlr[i] <- max(abs(DlrTC[,i]))
+  c_slr[i] <- max(abs(AlrSM[,i]))
+}
+print(sum(c_tlr) - sum(c_trr))
+print(sum(c_slr) - sum(c_srr))
+```
+
+```{r}
+par(mfrow=c(1,2))
+for (i in 1:6){
+  A <- matrix(Arr[i,], nrow = 21, ncol = 21)
+  corrplot(A, is.corr = FALSE, method = 'color', 
+           title = paste("A_rr", i),
+           mar=c(0,0,1,0))
+  D <- Drr[,i]
+  plot(D, type = 'l', main = paste("D_rr", i))
+  
+  A2 <- matrix(Alr[i,], nrow = 21, ncol = 21)
+  corrplot(A2, is.corr = FALSE, method = 'color', 
+           title = paste("A_lr", i),
+           mar=c(0,0,1,0))
+  D2 <- Dlr[,i]
+  plot(D2, type = 'l', main = paste("D_lr ", i))
+}
+```
+
+```{r}
+PCs <- svd(TC, 6)
+
+PCU <- PCs$u * -1
+
+plot(PCs$d, ylab = 'Eigenvalues')
+
+par(mfrow = c(1,2))
+for (i in 1:6){
+  Z <- PCU[,i]
+  plot(Z, type = 'l', main = paste("Z", i))
+  plot(TC[,i], type = 'l', main = paste("TC", i))
+}
 ```
 
